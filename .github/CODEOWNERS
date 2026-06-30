@@ -1,0 +1,15 @@
+# GitHub auto-requests the right reviewer per path. This is the enforcement
+# layer for "one file = one owner". Replace handles with real usernames.
+
+# Frozen contracts: require BOTH the lead and any change to be deliberate.
+/contracts/                  @lead-roleA
+/backend/main.py             @lead-roleA
+/frontend/src/main.jsx       @lead-roleA @role-D
+/frontend/src/App.jsx        @lead-roleA @role-D
+
+# Vertical slices: each role owns their tree outright.
+/backend/memory/             @lead-roleA
+/backend/stubs/              @lead-roleA
+/backend/game/               @role-B
+/backend/content/            @role-C
+/frontend/                   @role-D

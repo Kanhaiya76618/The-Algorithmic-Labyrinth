@@ -1,0 +1,6 @@
+# PIN on Day 1. Do not float — the 1.x API is moving fast.
+cognee==1.1.2
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.0
+python-dotenv==1.0.1

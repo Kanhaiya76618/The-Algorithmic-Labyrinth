@@ -1,0 +1,4 @@
+:root { --indigo:#5b21b6; --ember:#ea7317; }
+.shell { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 24px; }
+.topbar { display:flex; gap:16px; border-bottom:1px solid #eee; padding-bottom:12px; }
+.boss { color: var(--ember); font-style: italic; }
