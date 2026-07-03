@@ -1,7 +1,19 @@
+"""Content browsing endpoints.
+
+Everything served here is the PUBLIC Challenge projection — visible tests only,
+never hidden test cases, probe labels or answers. Grading data is available to
+the game layer exclusively through loader.get_hidden_tests()/
+get_expected_answer(), which have no route.
+"""
+
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 
 from backend.content.loader import (
     get_all_questions,
+    get_boss_challenges_for_level,
+    get_challenge_for_level,
     get_question_by_id,
     get_questions_by_difficulty,
     get_questions_by_topic,
@@ -14,7 +26,7 @@ router = APIRouter(prefix="/content", tags=["content"])
 
 @router.get("/questions", response_model=list[Challenge])
 def get_questions() -> list[Challenge]:
-    """Return every loaded challenge."""
+    """Return every loaded challenge (public projection)."""
     return get_all_questions()
 
 
@@ -27,13 +39,17 @@ def get_random_questions() -> Challenge:
     return question
 
 
-@router.get("/questions/{question_id}", response_model=Challenge)
-def get_question(question_id: str) -> Challenge:
-    """Return a single challenge by its question_id."""
-    question = get_question_by_id(question_id)
+@router.get("/questions/level/{level}", response_model=list[Challenge])
+def get_questions_for_level(level: int, language: Optional[str] = None) -> list[Challenge]:
+    """Return the questions a floor serves: the boss set for boss levels, or
+    one randomly chosen variant otherwise."""
+    boss = get_boss_challenges_for_level(level, language)
+    if boss:
+        return boss
+    question = get_challenge_for_level(level, language)
     if question is None:
-        raise HTTPException(status_code=404, detail="Question not found")
-    return question
+        raise HTTPException(status_code=404, detail="No questions for level")
+    return [question]
 
 
 @router.get("/questions/topic/{topic}", response_model=list[Challenge])
@@ -52,8 +68,16 @@ def get_questions_for_difficulty(difficulty: str) -> list[Challenge]:
         Difficulty(difficulty.lower())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid difficulty") from exc
-
     questions = get_questions_by_difficulty(difficulty)
     if not questions:
         raise HTTPException(status_code=404, detail="No questions found for difficulty")
     return questions
+
+
+@router.get("/questions/{question_id}", response_model=Challenge)
+def get_question(question_id: str) -> Challenge:
+    """Return a single challenge by its question_id."""
+    question = get_question_by_id(question_id)
+    if question is None:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return question
