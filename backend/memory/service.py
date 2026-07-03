@@ -36,6 +36,11 @@ from contracts.schemas import Episode, PlayerProfile
 
 logger = logging.getLogger("dor.memory")
 
+# Outage guard: a hung cognee call (e.g. an LLM retry storm) must degrade like
+# any other cognee failure, never stall the game loop.
+COGNEE_WRITE_TIMEOUT_S = 20.0   # remember / reinforce / improve / forget
+COGNEE_RECALL_TIMEOUT_S = 12.0  # recall / graph reads
+
 _WHISPER_PREFIX = "whisper:"
 _REVEAL_PREFIX = "hidden entrance revealed"
 
@@ -139,9 +144,17 @@ class CogneeMemoryService(MemoryService):
         try:
             import cognee
 
-            await cognee.remember(
-                episode_to_text(episode),
-                dataset_name=self._dataset(episode.player_id),
+            await asyncio.wait_for(
+                cognee.remember(
+                    episode_to_text(episode),
+                    dataset_name=self._dataset(episode.player_id),
+                ),
+                timeout=COGNEE_WRITE_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "remember() timed out after %.0fs; episode kept in journal only",
+                COGNEE_WRITE_TIMEOUT_S,
             )
         except Exception:
             logger.warning("remember() failed; episode kept in journal only", exc_info=True)
@@ -157,14 +170,17 @@ class CogneeMemoryService(MemoryService):
 
             # Nonce defeats session-cache staleness (see API_NOTES.md):
             nonce = f"{len(self._journal_read(player_id))}-{int(time.time())}"
-            results = await cognee.recall(
-                _PROFILE_QUERY.format(player=player_id, nonce=nonce),
-                query_type=SearchType.GRAPH_COMPLETION,
-                datasets=[self._dataset(player_id)],
-                session_id=self._session(player_id),
-                top_k=15,
-                feedback_influence=0.5,
-                system_prompt=_PROFILE_SYSTEM_PROMPT,
+            results = await asyncio.wait_for(
+                cognee.recall(
+                    _PROFILE_QUERY.format(player=player_id, nonce=nonce),
+                    query_type=SearchType.GRAPH_COMPLETION,
+                    datasets=[self._dataset(player_id)],
+                    session_id=self._session(player_id),
+                    top_k=15,
+                    feedback_influence=0.5,
+                    system_prompt=_PROFILE_SYSTEM_PROMPT,
+                ),
+                timeout=COGNEE_RECALL_TIMEOUT_S,
             )
             answer, qa_id = self._extract_answer(results)
             if qa_id:
@@ -179,6 +195,12 @@ class CogneeMemoryService(MemoryService):
                 profile.explorer_score = _clamp(parsed.get("explorer_score"))
                 # whispers_heard / hidden_discovered stay journal-derived:
                 # game-critical state must not flap with LLM phrasing.
+        except asyncio.TimeoutError:
+            logger.warning(
+                "recall() timed out after %.0fs; degraded to journal-only",
+                COGNEE_RECALL_TIMEOUT_S,
+            )
+            self._fill_profile_from_journal(profile)
         except Exception:
             logger.warning("recall_profile degraded to journal-only", exc_info=True)
             self._fill_profile_from_journal(profile)
@@ -254,11 +276,18 @@ class CogneeMemoryService(MemoryService):
             import cognee
 
             text = f"outcome score {score:+g}: {outcome_text}"
-            await cognee.session.add_feedback(
-                session_id=self._session(player_id),
-                qa_id=qa_id,
-                feedback_text=text,
-                feedback_score=int(round(_clamp(score, -5, 5))),
+            await asyncio.wait_for(
+                cognee.session.add_feedback(
+                    session_id=self._session(player_id),
+                    qa_id=qa_id,
+                    feedback_text=text,
+                    feedback_score=int(round(_clamp(score, -5, 5))),
+                ),
+                timeout=COGNEE_WRITE_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "reinforce timed out after %.0fs (non-fatal)", COGNEE_WRITE_TIMEOUT_S
             )
         except Exception:
             logger.warning("reinforce failed (non-fatal)", exc_info=True)
@@ -267,7 +296,13 @@ class CogneeMemoryService(MemoryService):
         try:
             import cognee
 
-            await cognee.improve(self._dataset(player_id))
+            await asyncio.wait_for(
+                cognee.improve(self._dataset(player_id)), timeout=COGNEE_WRITE_TIMEOUT_S
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "improve timed out after %.0fs (non-fatal)", COGNEE_WRITE_TIMEOUT_S
+            )
         except Exception:
             logger.warning("improve failed (non-fatal)", exc_info=True)
 
@@ -277,7 +312,15 @@ class CogneeMemoryService(MemoryService):
         try:
             import cognee
 
-            await cognee.forget(dataset=self._dataset(player_id))
+            await asyncio.wait_for(
+                cognee.forget(dataset=self._dataset(player_id)),
+                timeout=COGNEE_WRITE_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "cognee.forget timed out after %.0fs; journal still wiped",
+                COGNEE_WRITE_TIMEOUT_S,
+            )
         except Exception:
             logger.warning("cognee.forget failed; journal still wiped", exc_info=True)
         self._journal_path(player_id).unlink(missing_ok=True)
@@ -287,8 +330,13 @@ class CogneeMemoryService(MemoryService):
         try:
             from cognee.infrastructure.databases.graph import get_graph_engine
 
-            engine = await get_graph_engine()
-            nodes_raw, edges_raw = await engine.get_graph_data()
+            async def _fetch():
+                engine = await get_graph_engine()
+                return await engine.get_graph_data()
+
+            nodes_raw, edges_raw = await asyncio.wait_for(
+                _fetch(), timeout=COGNEE_RECALL_TIMEOUT_S
+            )
             nodes, edges = [], []
             degree: dict[str, int] = {}
             for src, dst, *rest in edges_raw:
@@ -308,6 +356,11 @@ class CogneeMemoryService(MemoryService):
                     )
             if nodes:
                 return {"nodes": nodes, "edges": edges}
+        except asyncio.TimeoutError:
+            logger.warning(
+                "get_graph timed out after %.0fs; degraded to journal fallback",
+                COGNEE_RECALL_TIMEOUT_S,
+            )
         except Exception:
             logger.warning("get_graph degraded to journal fallback", exc_info=True)
         return self._graph_from_journal(player_id)
