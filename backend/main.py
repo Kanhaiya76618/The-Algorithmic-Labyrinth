@@ -14,7 +14,8 @@ from backend.memory.router import router as memory_router
 
 app = FastAPI(title="Dungeon of Recall", version="0.1.0")
 
-_origins = ["http://localhost:5173"] + [
+# CRA dev server (3000) is the current frontend; 5173 kept for older Vite setups.
+_origins = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"] + [
     origin.strip()
     for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
     if origin.strip()

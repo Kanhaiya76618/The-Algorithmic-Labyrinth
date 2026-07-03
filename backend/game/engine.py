@@ -90,6 +90,12 @@ async def submit_answer(
 
     is_boss_floor = not run.in_hidden and run.level in loader.BOSS_QUESTION_COUNTS
 
+    # judge_offline = no judgement: don't advance, don't record a failure the
+    # player never committed, don't reinforce — return the verdict as-is.
+    if result.verdict == "judge_offline":
+        run.last_discovery = run.last_discovery or DiscoveryState()
+        return result, run.last_discovery
+
     # question_attempt episode — the memory loop's staple diet
     await _remember_safely(
         mem,
@@ -122,6 +128,15 @@ async def submit_answer(
     elif result.floor_cleared or result.run_complete:
         discovery = await check_discovery(run.player_id, mem)
     run.last_discovery = discovery
+
+    # Reinforce outcome and consolidate memory in Cognee
+    outcome_text = "Correct" if result.correct else "Incorrect"
+    if result.failed_probes:
+        outcome_text += f" (failed on: {', '.join(result.failed_probes)})"
+    score = 1.0 if result.correct else -1.0
+    await mem.reinforce(run.player_id, outcome_text, score)
+    await mem.improve(run.player_id)
+
     return result, discovery
 
 

@@ -85,6 +85,10 @@ async def next_challenge(req: HiddenEnterRequest) -> NextResponse:
 @router.post("/answer", response_model=AnswerResponse)
 async def answer(req: SubmitAnswerRequest, mem: MemoryService = Depends(get_memory)) -> AnswerResponse:
     run = _run_or_404(req.run_id)
+    # Server-side anti-replay: only the challenge actually being served may be
+    # answered — otherwise one memorized easy question climbs all 50 floors.
+    if run.current_question_id is None or req.question_id != run.current_question_id:
+        raise HTTPException(status_code=409, detail="That is not the challenge before you")
     known_whispers = len((run.last_discovery or DiscoveryState()).whispers)
     result, discovery = await engine.submit_answer(
         run, req.question_id, req.answer, req.code, req.language, mem
