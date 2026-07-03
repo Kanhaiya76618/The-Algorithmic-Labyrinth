@@ -6,3 +6,8 @@ node_modules/
 dist/
 .cognee_system/
 *.db
+.claude/
+.vscode/
+frontend/.vite/
+data/
+.DS_Store
