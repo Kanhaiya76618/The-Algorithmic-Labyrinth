@@ -1,64 +1,66 @@
-// No backend contract exists yet (contracts/ and backend/ are still skeletons), so this
-// file defines the shapes the frontend expects. Coordinate with backend owners before
-// changing these paths/payloads.
+const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
-export const PLAYER_NAME_KEY = 'dungeon-of-recall:player-name'
-export const RUN_ID_KEY = 'dungeon-of-recall:run-id'
+export const PLAYER_NAME_KEY = "dungeon-of-recall:player-name";
+export const RUN_ID_KEY = "dungeon-of-recall:run-id";
+
+export const LANGUAGES = ["python3", "java", "c++", "c"];
 
 async function request(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
+  const url = `${BASE_URL}${path}`;
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
     ...options,
-  })
+  });
   if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`${options.method || 'GET'} ${path} failed: ${res.status} ${body}`)
+    const body = await res.text().catch(() => "");
+    throw new Error(`${options.method || "GET"} ${url} failed: ${res.status} ${body}`);
   }
-  return res.json()
+  return res.json();
 }
 
-// POST /game/start { player_name } -> RunState
-// RunState: { run_id, player_name, current_floor_index,
-//   floors: [{ index, name, status: 'cleared'|'current'|'locked', difficulty }],
-//   boss: { name, hp, max_hp } | null }
+function post(path, payload) {
+  return request(path, { method: "POST", body: JSON.stringify(payload) });
+}
+
+// -> { run_id, player_id, level, discovery: {revealed, via, whispers} }
 export function startGame(playerName) {
-  return request('/game/start', {
-    method: 'POST',
-    body: JSON.stringify({ player_name: playerName }),
-  })
+  return post("/game/start", { player_name: playerName });
 }
 
-// POST /game/next { run_id } -> Challenge
-// Challenge: { id, floor_index, topic, type: 'mcq'|'input', prompt, choices: string[] | null }
+// -> { challenge, level, in_hidden, hidden_level }
 export function nextChallenge(runId) {
-  return request('/game/next', {
-    method: 'POST',
-    body: JSON.stringify({ run_id: runId }),
-  })
+  return post("/game/next", { run_id: runId });
 }
 
-// POST /game/answer { run_id, challenge_id, answer } -> AnswerResult
-// AnswerResult: { correct, floor_cleared, run_complete, boss_triggered,
-//   next_floor_index, message }
-export function submitAnswer(runId, challengeId, answer) {
-  return request('/game/answer', {
-    method: 'POST',
-    body: JSON.stringify({ run_id: runId, challenge_id: challengeId, answer }),
-  })
+// payload: { answer } for short_answer, { code, language } for code.
+// -> { result: AnswerResult, level, in_hidden, hidden_level, discovery, new_whisper }
+export function submitAnswer(runId, questionId, payload) {
+  return post("/game/answer", {
+    run_id: runId,
+    question_id: questionId,
+    answer: payload.answer ?? null,
+    code: payload.code ?? null,
+    language: payload.language ?? "python3",
+  });
 }
 
-// GET /memory/report/:playerName -> MemoryReport
-// MemoryReport: { player_name, threat_level (0-100), executive_summary,
-//   difficulty_spike: { topic, delta } | null,
-//   topics: [{ id, name, weight (0-1), reinforced_recently }] }
-export function getMemoryReport(playerName) {
-  return request(`/memory/report/${encodeURIComponent(playerName)}`)
+// action: revisit_floor | inspect | idle_linger | off_path_move -> { recorded }
+export function explore(runId, action, target) {
+  return post("/game/explore", { run_id: runId, action, target: target ?? null });
 }
 
-// POST /memory/forget { player_name, topic? } -> { ok }
-export function forget(playerName, topic) {
-  return request('/memory/forget', {
-    method: 'POST',
-    body: JSON.stringify({ player_name: playerName, topic }),
-  })
+// -> StartResponse shape, 403 while the entrance is sealed
+export function enterHidden(runId) {
+  return post("/game/hidden/enter", { run_id: runId });
+}
+
+// -> { player_id, threat_level, executive_summary, difficulty_spike,
+//      topics: [{id, name, weight, reinforced_recently}], profile, graph }
+export function getMemoryReport(playerId) {
+  return request(`/memory/report/${encodeURIComponent(playerId)}`);
+}
+
+// -> { forgotten: player_id }
+export function forget(playerId) {
+  return post(`/memory/forget/${encodeURIComponent(playerId)}`, {});
 }
