@@ -33,7 +33,13 @@ COMPILED = {"java", "c++", "c"}
 # Compiled languages pay a JVM/compiler startup tax on top of the question's
 # per-test budget.
 RUN_GRACE_MS = {"python3": 500, "java": 2000, "c++": 300, "c": 300}
-COMPILE_TIMEOUT_MS = 15000
+COMPILE_TIMEOUT_MS = 10000  # Piston's compile_timeout ceiling; 15000 was 400-rejected
+# Piston rejects any request whose run_timeout exceeds its configured ceiling
+# (default 3000ms) with HTTP 400 -> we'd read that as judge_offline for EVERY
+# submission. With time_limit_s=3 + grace we were sending 3300-5000ms, so the
+# judge was silently offline for all languages. Clamp to the ceiling. If Piston
+# is reconfigured with a higher PISTON_RUN_TIMEOUT, raise this to match.
+PISTON_MAX_RUN_TIMEOUT_MS = 3000
 
 
 def _offline(language: str, total: int) -> dict[str, Any]:
@@ -75,7 +81,9 @@ async def run_submission(
         }
 
     lang = SUPPORTED_LANGUAGES[language]
-    run_timeout_ms = time_limit_s * 1000 + RUN_GRACE_MS[language]
+    run_timeout_ms = min(
+        time_limit_s * 1000 + RUN_GRACE_MS[language], PISTON_MAX_RUN_TIMEOUT_MS
+    )
 
     tests_passed = 0
     failed_probes: list[str] = []
