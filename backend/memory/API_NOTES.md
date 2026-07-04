@@ -46,24 +46,81 @@ bumped from 1.1.2).
    feedback_score)`. Later recalls apply the weights via
    `feedback_influence: float` (0.0 default — must be set > 0 to feel it).
 
-### Adaptation (pending approval)
-- `recall_profile`: `recall(..., query_type=GRAPH_COMPLETION,
-  datasets=[dataset], session_id=f"profile_{player_id}")`; take
-  `interaction_id` from the `ResponseQAEntry.qa_id` in the response.
-- `reinforce`: `cognee.session.add_feedback(session_id=f"profile_{player_id}",
-  qa_id=<interaction_id>, feedback_text=outcome_text (score embedded),
-  feedback_score=<scaled int>)`; recalls pass `feedback_influence=0.5`.
+### Adaptation (IMPLEMENTED — updated 2026-07-04 after live smoke debugging)
+
+Four findings from the live run changed the original plan:
+
+1. **`ResponseQAEntry` never appears in recall results when `query_type` is
+   explicit.** recall.py:434-445: an explicit `query_type` forces the source
+   list to `["graph"]` — the session/QA source is skipped entirely (only the
+   `query_type is None` auto path merges it). The QA row for the recall IS
+   still written (the graph completion runs through
+   `SessionManager.generate_completion_with_session`, awaited before recall
+   returns). Fix: read it back directly —
+   `SessionManager.get_session(user_id, session_id, last_n=1)` right after
+   recall; that entry's `qa_id` is the interaction id of the answer just
+   produced.
+2. **Session history poisons profile answers.** The session answer path
+   feeds conversation history (our previous JSON profiles) into the prompt;
+   at temp 0 the model anchors on them and new episodes stop registering —
+   staleness the query nonce cannot defeat. Fix: **rotate the session id per
+   recall** (`profile_{player}_{uuid8}`); history stays empty, answers stay
+   fresh, and feedback/improve still target the session of the last
+   successful recall (tracked in the service).
+3. **`feedback_score` is a 1..5 rating, not a signed delta.**
+   `SessionQAEntry` validation rejects negatives. Our [-5..+5] game scores
+   map linearly: -5→1, 0→3, +5→5; signed semantics stay in `feedback_text`.
+4. **`improve()` without `session_ids` never applies feedback.** It only
+   enriches the graph; `apply_feedback_weights_pipeline` runs solely for the
+   sessions passed in. Fix: `improve(dataset, session_ids=[<last recall's
+   session>])`.
+
+### Reinforcement: dual-channel (episode content + session weights)
+
+The session feedback-weight channel alone **cannot** move the profile on
+small graphs: weights only re-RANK triplets, and with `top_k=15 >= graph
+size` every triplet is retrieved regardless, so the LLM context is
+unchanged. Verified live: `apply_feedback_weights` logged
+`nodes=16, edges=15, applied=True` yet the next recall was byte-identical.
+
+`reinforce()` therefore writes BOTH:
+
+- **Channel 1 (load-bearing): a feedback EPISODE** — the outcome lands as a
+  real `remember()` episode (`event_type="feedback"`, rendered as "Boss
+  profile correction about player X: outcome score -5: ..."). Graph CONTENT
+  changes, so the next recall's context changes at any graph size. The
+  system prompt instructs that corrections override episode-derived
+  assessments.
+- **Channel 2 (opportunistic): session QA feedback** — `session.add_feedback`
+  keyed to the last recall's `qa_id`, bridged by
+  `improve(session_ids=[...])` into graph `feedback_weight`s, applied by
+  recalls via `feedback_influence=0.5`. Skipped without error when no qa_id
+  exists; `recall_profile`/`reinforce` never depend on it.
+
+This is a deliberate engineering choice made at hackathon time: session-
+scoped QA feedback alone was not observable on demo-sized graphs (plus the
+cognee 1.2.2 session/permission interactions above), so reinforcement is
+carried by graph-enriched feedback episodes with session feedback layered on
+top. All four verbs stay genuinely exercised; smoke-verified end to end.
+
+### Concurrency: dataset-creation race (CONFIRMED live)
+
+Two concurrent `remember()` calls for a NEW dataset race:
+`get_dataset_ids` reads the ownership table while
+`get_specific_user_permission_datasets` reads the ACL table — writer B can
+see writer A's freshly-inserted Dataset row before A's ACL grant commits →
+spurious `PermissionDeniedError ... [write]`. Fix: the service serializes
+cognee writes per player (`asyncio.Lock` per player_id).
 
 ## Session caching & determinism
 
-Session memory is ON by default (`CACHING` env toggles). Risk: an identical
-`query_text` in the same session can be served from the session's QA cache,
-returning a STALE profile after new episodes land. Workaround adopted:
-**append a nonce (episode count + timestamp) to every profile query** so no
-two profile questions are string-identical; sessions stay ON because the
-feedback loop needs the QA entries. If staleness still shows up, set
-`CACHING=false` (documented in .env.example) and fall back to
-`session.add_feedback` targeting qa_ids from `get_session`.
+Session memory is ON by default (`CACHING` env toggles); the feedback loop
+needs it for QA entries. Staleness is handled structurally now — sessions
+rotate per recall (see above), so no answer is ever generated on top of a
+previous profile answer. The query nonce is kept as a cheap extra guard.
+`forget()` also deletes the player's current session cache
+(`SessionManager.delete_session`), otherwise stale qa_ids would leak back
+after a wipe.
 
 ## Store topology (chosen: option a — Postgres relational + embedded graph/vector)
 
