@@ -1,0 +1,397 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;600;700;900&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        /* remap shadcn tokens to dungeon dark theme */
+        --background: 132 15% 6%;
+        --foreground: 90 12% 92%;
+        --card: 130 18% 10%;
+        --card-foreground: 90 12% 92%;
+        --popover: 130 18% 8%;
+        --popover-foreground: 90 12% 92%;
+        --primary: 187 100% 50%;
+        --primary-foreground: 130 20% 8%;
+        --secondary: 130 18% 14%;
+        --secondary-foreground: 90 12% 92%;
+        --muted: 130 12% 16%;
+        --muted-foreground: 90 8% 65%;
+        --accent: 15 100% 60%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 15 90% 55%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 130 12% 20%;
+        --input: 130 12% 16%;
+        --ring: 187 100% 50%;
+        --radius: 0.75rem;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    html, body, #root {
+        min-height: 100%;
+        background: #0B120C;
+    }
+    body {
+        margin: 0;
+        font-family: 'Lora', serif;
+        color: #E8EDE6;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background: #0B120C;
+        overflow-x: hidden;
+    }
+    ::selection {
+        background: rgba(0, 229, 255, 0.35);
+        color: #E8EDE6;
+    }
+}
+
+@layer components {
+    /* ---------- Glassmorphism panel ---------- */
+    .glass-panel {
+        background: linear-gradient(
+            135deg,
+            rgba(28, 42, 30, 0.55) 0%,
+            rgba(19, 26, 20, 0.65) 100%
+        );
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        border: 1px solid rgba(0, 229, 255, 0.22);
+        border-top: 1px solid rgba(0, 229, 255, 0.45);
+        border-left: 1px solid rgba(0, 229, 255, 0.35);
+        border-right: 1px solid rgba(30, 32, 30, 0.9);
+        border-bottom: 1px solid rgba(11, 18, 12, 0.95);
+        box-shadow:
+            0 12px 40px rgba(0, 0, 0, 0.55),
+            0 0 24px rgba(0, 229, 255, 0.08),
+            inset 0 1px 0 rgba(232, 237, 230, 0.06);
+        border-radius: 18px;
+    }
+
+    .glass-panel-ember {
+        background: linear-gradient(
+            135deg,
+            rgba(56, 41, 24, 0.55) 0%,
+            rgba(19, 26, 20, 0.7) 100%
+        );
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        border: 1px solid rgba(255, 107, 53, 0.35);
+        box-shadow:
+            0 12px 40px rgba(0, 0, 0, 0.55),
+            0 0 24px rgba(255, 107, 53, 0.15),
+            inset 0 1px 0 rgba(232, 237, 230, 0.06);
+        border-radius: 18px;
+    }
+
+    /* ---------- Carved-stone plaque ---------- */
+    .carved-stone {
+        background:
+            linear-gradient(180deg, #3F4540 0%, #2A2E2A 50%, #1E201E 100%);
+        border: 2px solid #0B120C;
+        border-radius: 14px;
+        box-shadow:
+            inset 0 3px 0 rgba(255, 255, 255, 0.08),
+            inset 3px 0 0 rgba(255, 255, 255, 0.04),
+            inset -3px 0 0 rgba(0, 0, 0, 0.5),
+            inset 0 -4px 0 rgba(0, 0, 0, 0.65),
+            0 8px 22px rgba(0, 0, 0, 0.55);
+        position: relative;
+    }
+    .carved-stone::before {
+        content: '';
+        position: absolute;
+        inset: 4px;
+        border: 1px solid rgba(232, 237, 230, 0.05);
+        border-radius: 10px;
+        pointer-events: none;
+    }
+
+    /* ---------- Vine HUD bar ---------- */
+    .vine-bar {
+        position: relative;
+        background: #0B120C;
+        border: 2px solid #2A3F2D;
+        border-radius: 999px;
+        padding: 3px;
+        box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.75);
+    }
+    .vine-bar-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #3F5A42 0%, #00E5FF 100%);
+        box-shadow: 0 0 12px rgba(0, 229, 255, 0.55);
+        position: relative;
+        overflow: hidden;
+    }
+    .vine-bar-fill::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            repeating-linear-gradient(
+                45deg,
+                transparent 0 6px,
+                rgba(255, 255, 255, 0.08) 6px 8px
+            );
+    }
+
+    /* ---------- Rune-etched button ---------- */
+    .btn-ember {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        font-family: 'Cinzel', serif;
+        font-weight: 700;
+        font-size: 0.85rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #0B120C;
+        background:
+            linear-gradient(180deg, #FF8A50 0%, #FF6B35 55%, #B44420 100%);
+        border: 2px solid #0B120C;
+        border-radius: 999px;
+        box-shadow:
+            inset 0 2px 0 rgba(255, 255, 255, 0.35),
+            inset 0 -3px 0 rgba(0, 0, 0, 0.35),
+            0 6px 0 #7A2E14,
+            0 10px 24px rgba(255, 107, 53, 0.35);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        cursor: pointer;
+    }
+    .btn-ember:hover {
+        transform: translateY(-1px);
+        box-shadow:
+            inset 0 2px 0 rgba(255, 255, 255, 0.4),
+            inset 0 -3px 0 rgba(0, 0, 0, 0.35),
+            0 8px 0 #7A2E14,
+            0 14px 32px rgba(255, 107, 53, 0.55);
+    }
+    .btn-ember:active {
+        transform: translateY(3px);
+        box-shadow:
+            inset 0 2px 0 rgba(255, 255, 255, 0.3),
+            inset 0 -3px 0 rgba(0, 0, 0, 0.35),
+            0 2px 0 #7A2E14;
+    }
+
+    .btn-cyan {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.7rem 1.4rem;
+        font-family: 'Cinzel', serif;
+        font-weight: 600;
+        font-size: 0.8rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #E8EDE6;
+        background: linear-gradient(180deg,
+            rgba(0, 229, 255, 0.18) 0%,
+            rgba(28, 42, 30, 0.6) 100%);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 229, 255, 0.55);
+        border-radius: 999px;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.15),
+            0 0 18px rgba(0, 229, 255, 0.25);
+        cursor: pointer;
+        transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .btn-cyan:hover {
+        border-color: rgba(0, 229, 255, 0.9);
+        box-shadow: 0 0 26px rgba(0, 229, 255, 0.5);
+    }
+
+    .btn-disabled {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.7rem 1.4rem;
+        font-family: 'Cinzel', serif;
+        font-weight: 600;
+        font-size: 0.8rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #4F554F;
+        background: #1C2A1E;
+        border: 1px solid #2A3F2D;
+        border-radius: 999px;
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    /* ---------- Level nodes ---------- */
+    .node-base {
+        width: 60px; height: 60px;
+        border-radius: 999px;
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'Cinzel', serif; font-weight: 700;
+        font-size: 1.05rem;
+        border: 3px solid #0B120C;
+        position: relative;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+    }
+    .node-locked {
+        background: radial-gradient(circle at 30% 30%, #363A36 0%, #1E201E 80%);
+        color: #4F554F;
+        box-shadow:
+            inset 0 -3px 0 rgba(0,0,0,0.6),
+            inset 0 3px 0 rgba(255,255,255,0.05),
+            0 4px 10px rgba(0,0,0,0.6);
+        cursor: not-allowed;
+    }
+    .node-unlocked {
+        background: radial-gradient(circle at 30% 30%,
+            rgba(0, 229, 255, 0.35) 0%, #1C2A1E 80%);
+        color: #E8EDE6;
+        border-color: rgba(0, 229, 255, 0.7);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.12),
+            0 0 16px rgba(0, 229, 255, 0.45),
+            0 4px 10px rgba(0,0,0,0.5);
+    }
+    .node-completed {
+        background: radial-gradient(circle at 30% 30%,
+            #3F5A42 0%, #1C2A1E 80%);
+        color: #00E5FF;
+        border-color: #00E5FF;
+        box-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+    }
+    .node-current {
+        background: radial-gradient(circle at 30% 30%,
+            rgba(255, 107, 53, 0.55) 0%, #382918 80%);
+        color: #E8EDE6;
+        border-color: #FF6B35;
+    }
+    .node-boss {
+        width: 84px; height: 84px;
+        background:
+            radial-gradient(circle at 30% 30%, #B44420 0%, #382918 80%);
+        color: #E8EDE6;
+        border: 4px solid #0B120C;
+        clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        border-radius: 0;
+        font-size: 0.75rem;
+    }
+
+    /* ---------- HP Gem (amber heart) ---------- */
+    .hp-gem {
+        width: 26px; height: 26px;
+        background: linear-gradient(180deg, #FFB870 0%, #FF6B35 55%, #B44420 100%);
+        clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+        box-shadow: 0 0 8px rgba(255, 107, 53, 0.7);
+        position: relative;
+    }
+    .hp-gem::before {
+        content: '';
+        position: absolute; left: 18%; top: 12%;
+        width: 24%; height: 20%;
+        background: rgba(255,255,255,0.55);
+        border-radius: 50%;
+        filter: blur(1px);
+    }
+    .hp-gem-empty {
+        background: #363A36;
+        box-shadow: inset 0 0 8px rgba(0,0,0,0.7);
+    }
+    .hp-gem-empty::before { display: none; }
+
+    /* ---------- Segmented boss HP bar ---------- */
+    .stone-hp {
+        display: flex; gap: 4px;
+        padding: 4px;
+        background: #0B120C;
+        border: 2px solid #363A36;
+        border-radius: 6px;
+        box-shadow: inset 0 3px 6px rgba(0,0,0,0.8);
+    }
+    .stone-hp-seg {
+        flex: 1;
+        height: 16px;
+        background: linear-gradient(180deg, #FF8A50 0%, #FF6B35 60%, #B44420 100%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(0,0,0,0.4);
+        border-radius: 2px;
+    }
+    .stone-hp-seg-empty {
+        background: #1E201E;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.8);
+    }
+
+    /* ---------- Utility: parallax scroll ---------- */
+    .scanlines {
+        background-image: repeating-linear-gradient(
+            0deg,
+            rgba(0, 229, 255, 0.02) 0,
+            rgba(0, 229, 255, 0.02) 1px,
+            transparent 1px,
+            transparent 3px
+        );
+    }
+
+    .rune-divider {
+        height: 1px;
+        background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(0, 229, 255, 0.4) 20%,
+            rgba(0, 229, 255, 0.4) 80%,
+            transparent 100%);
+    }
+
+    .noise {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.05  0 0 0 0 0.06  0 0 0 0 0.04  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+        opacity: 0.25;
+        mix-blend-mode: overlay;
+    }
+
+    .device-frame {
+        width: 390px;
+        min-height: 844px;
+        position: relative;
+        box-shadow:
+            0 0 0 6px #0B120C,
+            0 0 0 8px rgba(0, 229, 255, 0.15),
+            0 40px 100px rgba(0, 0, 0, 0.9);
+        border-radius: 32px;
+        overflow: hidden;
+        background: #0B120C;
+    }
+
+    .text-shadow-stone {
+        text-shadow: 0 2px 0 #0B120C, 0 4px 8px rgba(0,0,0,0.6);
+    }
+    .text-shadow-glow {
+        text-shadow: 0 0 12px rgba(0, 229, 255, 0.6);
+    }
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0B120C; }
+::-webkit-scrollbar-thumb { background: #2A3F2D; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3F5A42; }
+
+/* prefers-reduced-motion — quiet all decorative/loop animations */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}

@@ -1,0 +1,9 @@
+# PIN on Day 1. Do not float — the 1.x API is moving fast.
+# cognee 1.2.2 needs fastapi>=0.116.2, uvicorn>=0.34, pydantic>=2.10.5 —
+# the pins below are the set verified working together on 2026-07-03.
+cognee[postgres-binary]==1.2.2   # postgres-binary extra: asyncpg + psycopg2-binary wheels (plain [postgres] builds psycopg2 from source and needs pg_config)
+fastapi==0.138.2
+uvicorn==0.49.0
+pydantic==2.12.5
+python-dotenv==1.0.1
+httpx==0.28.1             # judge client (backend/judge, approved earlier)

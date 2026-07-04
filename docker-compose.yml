@@ -1,0 +1,62 @@
+# Dungeon of Recall — self-hosted stack (Best Use of Open Source track:
+# all stores run locally; only the LLM is a cloud call).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cognee
+      POSTGRES_PASSWORD: cognee
+      POSTGRES_DB: cognee_db
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cognee -d cognee_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  piston:
+    image: ghcr.io/engineer-man/piston
+    container_name: dor-piston
+    restart: unless-stopped
+    privileged: true # required by Piston's process isolation (cgroups)
+    ports:
+      # Loopback only: reachable from this host, never from the network.
+      - "127.0.0.1:2000:2000"
+    volumes:
+      - piston_packages:/piston/packages
+    tmpfs:
+      - /tmp:exec
+
+  # Optional: containerized backend. Devs normally run uvicorn locally;
+  # `docker compose --profile full up` runs everything.
+  backend:
+    profiles: [full]
+    image: python:3.12-slim
+    container_name: dor-backend
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+    env_file: .env
+    environment:
+      DB_HOST: postgres # override localhost from .env inside the network
+      COGNEE_DATA_ROOT: /app/data/cognee
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/app
+      # Embedded graph (ladybug) + vector (lancedb) stores live here.
+      # Named volume => the Boss remembers across rebuilds. Non-negotiable.
+      - cognee_data:/app/data/cognee
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  piston_packages:
+  cognee_data:
