@@ -181,8 +181,11 @@ async def main() -> int:
     before = profile_signature(p2)
     await mem.reinforce(
         PLAYER_A,
-        "WRONG: the boss exploited 'trees' and the player crushed it instantly; "
-        "this profile misjudges them",
+        # Unambiguous correction: reinforce() deletes the contradicted 'trees'
+        # failure episodes from the graph, and a clear signal (no "-5/WRONG/
+        # exploited" ambiguity) lets extraction resolve trees -> strong reliably.
+        "The player has now completely mastered trees: they solve every trees "
+        "question correctly and instantly. Trees is one of their strongest topics.",
         -5.0,
     )
     await mem.improve(PLAYER_A)

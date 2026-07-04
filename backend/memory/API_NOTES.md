@@ -186,3 +186,27 @@ Residual: `improve` still occasionally reports "NO SHIFT" **with no timeout** �
 this is genuine LLM nondeterminism (whether the -5 feedback measurably moves the
 recalled profile on a demo-sized graph), not latency. It shifts correctly on
 most runs. Accepted as a known nondeterministic edge, not a code defect.
+
+### Update: deterministic supersede (feedback bite)
+
+Root cause of the flaky feedback-bite: `reinforce()` only ADDED a correction
+episode; the prior "failed <topic>" episodes stayed in the graph, so
+`GRAPH_COMPLETION` saw contradictory evidence and the LLM resolved it
+nondeterministically (measured ~2/3 shift on identical input). Confirmed
+cheaply: with a single prior failure it shifts reliably; with several it's a
+coin-flip.
+
+Fix (Channel 3, inside `reinforce()`): when a correction names a topic, delete
+the contradicted `question_attempt` failure episodes from the cognee graph via
+`cognee.forget(data_id=…, dataset=…)`. The data_id is recomputed
+deterministically — `uuid5(NAMESPACE_OID, md5(episode_text)+user.id+
+user.tenant_id)` (verified to match cognee's own id) — so no write-time
+bookkeeping and no `remember_episode` change. The JSONL journal entry is kept
+(audit); only the graph data-item is removed.
+
+Result: with the failures deleted AND an unambiguous correction, the isolated
+feedback-bite test is deterministic (3/3). The dense full smoke can still
+occasionally report "NO SHIFT" — retrieval over the fuller multi-topic graph
+stays somewhat nondeterministic. `remember`/`recall`/`forget` are unaffected by
+the surgical delete (verified). Note: the id derivation is a documented
+dependency on cognee 1.2.2 internals; revisit if upgrading cognee.

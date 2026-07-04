@@ -341,7 +341,93 @@ class CogneeMemoryService(MemoryService):
             eps = [e for e in eps if e.event_type == event_type]
         return list(reversed(eps[-limit:]))  # newest first
 
+    def _supersede_note(self, player_id: str, outcome_text: str) -> str:
+        """A correction only ADDS an episode; on a dense graph several older
+        failure episodes for the same topic outvote it in GRAPH_COMPLETION.
+        Give extraction an explicit down-weight signal: name the prior failure
+        episodes this correction contradicts (topic mentioned in the outcome)
+        as superseded — appended into the SAME feedback episode text."""
+        ot = outcome_text.lower()
+        superseded: list[str] = []
+        for ep in self._journal_read(player_id):
+            if ep.event_type == "question_attempt" and ep.correct is False and ep.topic:
+                if ep.topic.lower() in ot:
+                    superseded.append(f"{ep.question_id or ep.topic} ({ep.topic})")
+        if not superseded:
+            return ""
+        uniq = list(dict.fromkeys(superseded))
+        return (
+            " This correction SUPERSEDES the player's earlier failure records: "
+            + ", ".join(uniq)
+            + " — those stale failures no longer reflect the player's current "
+            "ability and must be down-weighted."
+        )
+
+    def _contradicted_failures(self, player_id: str, outcome_text: str) -> list[Episode]:
+        """Prior failed question_attempts whose topic the correction names."""
+        ot = outcome_text.lower()
+        return [
+            ep
+            for ep in self._journal_read(player_id)
+            if ep.event_type == "question_attempt"
+            and ep.correct is False
+            and ep.topic
+            and ep.topic.lower() in ot
+        ]
+
+    async def _supersede_graph_episodes(self, player_id: str, episodes: list[Episode]) -> None:
+        """Deterministic feedback bite: physically remove the graph data-items
+        for the failure episodes this correction contradicts, so recall's
+        GRAPH_COMPLETION can no longer retrieve stale 'failed <topic>' evidence
+        and resolve the contradiction nondeterministically. The JSONL journal
+        entry is KEPT (audit trail) — only the cognee graph item is deleted.
+
+        cognee assigns each remembered text a deterministic data_id:
+        uuid5(NAMESPACE_OID, md5(text) + user.id + user.tenant_id) — so we can
+        recompute the id from the episode text without having stored it."""
+        if not episodes:
+            return
+        try:
+            import hashlib
+            from uuid import NAMESPACE_OID, uuid5
+
+            import cognee
+            from cognee.modules.users.methods import get_default_user
+
+            user = await get_default_user()
+            ds = self._dataset(player_id)
+            async with self._write_lock(player_id):
+                for ep in episodes:
+                    ep_text = episode_to_text(ep)
+                    content_hash = hashlib.md5(ep_text.encode("utf-8")).hexdigest()
+                    data_id = uuid5(
+                        NAMESPACE_OID, f"{content_hash}{user.id}{user.tenant_id}"
+                    )
+                    try:
+                        await asyncio.wait_for(
+                            cognee.forget(data_id=data_id, dataset=ds),
+                            timeout=COGNEE_WRITE_TIMEOUT_S,
+                        )
+                        logger.info(
+                            "reinforce: superseded graph episode %s (%s)",
+                            ep.question_id,
+                            ep.topic,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "reinforce: could not supersede %s (non-fatal)",
+                            ep.question_id,
+                            exc_info=True,
+                        )
+        except Exception:
+            logger.warning("reinforce: graph supersede setup failed (non-fatal)", exc_info=True)
+
     async def reinforce(self, player_id: str, outcome_text: str, score: float) -> None:
+        contradicted = self._contradicted_failures(player_id, outcome_text)
+        # Channel 3 (below) physically deletes the contradicted failures, so we
+        # no longer append the older "supersedes L21-A (trees)…" note — naming
+        # the deleted failures just re-injects 'trees failure' language for the
+        # extractor to trip on. Deletion is the clean, deterministic signal.
         text = f"outcome score {score:+g}: {outcome_text}"
         # Channel 1 — feedback EPISODE into the player's graph. This is the
         # load-bearing path: graph content changes, so the next recall's
@@ -350,6 +436,11 @@ class CogneeMemoryService(MemoryService):
         await self.remember_episode(
             Episode(player_id=player_id, event_type="feedback", detail=text)
         )
+        # Channel 3 — deterministic supersede: delete the contradicted failure
+        # episodes from the graph so extraction stops seeing conflicting
+        # evidence (the coin-flip that made the profile shift nondeterministic).
+        # Journal is preserved; only the cognee graph data-item is removed.
+        await self._supersede_graph_episodes(player_id, contradicted)
         # Channel 2 — session-scoped QA feedback (opportunistic). Re-weights
         # the graph elements the last profile answer used, once improve()
         # bridges it. Only possible if the last recall yielded a qa_id.
