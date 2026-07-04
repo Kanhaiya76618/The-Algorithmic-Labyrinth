@@ -154,3 +154,22 @@ Default is `authentication=required, multi_tenant=enabled` (startup log).
 We set `ENABLE_BACKEND_ACCESS_CONTROL=false` (compose + .env.example);
 isolation is **dataset-per-player** (`player_{id}`), not per-user auth.
 `COGNEE_SKIP_CONNECTION_TEST=true` kept (preflight hang).
+
+## Known flakiness: aimlapi LLM latency (smoke_memory)
+
+`scripts/smoke_memory.py` intermittently FAILs on `remember` and/or `improve`
+with **timeout degradations only** (`remember() timed out after 20s` /
+`recall() timed out after 25s`) rather than any assertion or logic error.
+Root cause is upstream latency on the aimlapi.com OpenAI-compatible endpoint
+(cognify + embedding calls occasionally exceed our 20–25s outage guards),
+not a code defect — the identical code passes cleanly when the endpoint is
+responsive. The assertion-quality verbs (`recall`, `recall/staleness`,
+`forget`) pass on every run, and JSON extraction from `recall_profile` is
+never malformed, so the guarantees the smoke test protects hold.
+
+Cascade to watch for: when a seed `remember()` times out, the dataset is
+never created in cognee, so subsequent ops log cognee-internal
+`DatasetNotFoundError` / `AttributeError: 'NoneType'...id` and `improve` may
+report "NO SHIFT" — these are downstream of the write timeout, not
+independent bugs. All such calls are caught non-fatally (episode is retained
+in the journal). Observed identically pre-merge and post-merge.
