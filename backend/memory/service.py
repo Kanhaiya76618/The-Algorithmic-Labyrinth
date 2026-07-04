@@ -39,9 +39,11 @@ logger = logging.getLogger("dor.memory")
 
 # Outage guard: a hung cognee call (e.g. an LLM retry storm) must degrade like
 # any other cognee failure, never stall the game loop.
-COGNEE_WRITE_TIMEOUT_S = 20.0   # remember / reinforce / forget
+COGNEE_WRITE_TIMEOUT_S = 35.0   # remember / reinforce / forget — aimlapi cognify runs
+                                # 16-21s per call (measured), so 20s clipped it; 35s headroom
 COGNEE_RECALL_TIMEOUT_S = 25.0  # recall / graph reads (session-path answers add LLM turns)
-COGNEE_IMPROVE_TIMEOUT_S = 60.0  # improve bridges session feedback via cognify (LLM-heavy)
+COGNEE_IMPROVE_TIMEOUT_S = 120.0  # improve bridges session feedback via cognify (feedback-weights
+                                  # + persist + distill pipelines); 60s clipped it on aimlapi
 
 _WHISPER_PREFIX = "whisper:"
 _REVEAL_PREFIX = "hidden entrance revealed"

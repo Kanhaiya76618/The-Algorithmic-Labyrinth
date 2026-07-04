@@ -173,3 +173,16 @@ never created in cognee, so subsequent ops log cognee-internal
 report "NO SHIFT" — these are downstream of the write timeout, not
 independent bugs. All such calls are caught non-fatally (episode is retained
 in the journal). Observed identically pre-merge and post-merge.
+
+### Update: write timeouts raised (aimlapi latency)
+
+Measured a successful `remember()` at ~16.5s and a single cognify pipeline run
+at ~21s against aimlapi — right at/over the original 20s guard, so `remember`
+was being clipped. Raised `COGNEE_WRITE_TIMEOUT_S` 20 -> 35 and
+`COGNEE_IMPROVE_TIMEOUT_S` 60 -> 120 (service.py). After this, `remember`
+passes on every run and `improve` no longer times out.
+
+Residual: `improve` still occasionally reports "NO SHIFT" **with no timeout** —
+this is genuine LLM nondeterminism (whether the -5 feedback measurably moves the
+recalled profile on a demo-sized graph), not latency. It shifts correctly on
+most runs. Accepted as a known nondeterministic edge, not a code defect.
