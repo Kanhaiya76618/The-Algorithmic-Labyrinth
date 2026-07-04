@@ -19,6 +19,16 @@ def episode_to_text(ep: Episode) -> str:
     if ep.event_type == "discovery":
         return f"Player {ep.player_id} discovery event: {ep.detail or 'found something hidden'}."
 
+    if ep.event_type == "feedback":
+        # Reinforcement channel that survives tiny graphs: outcome feedback
+        # lands as first-class graph CONTENT (session feedback weights only
+        # re-rank, which cannot change a fully-retrieved context).
+        return (
+            f"Boss profile correction about player {ep.player_id}: "
+            f"{ep.detail or 'no detail'}. This corrects earlier assessments "
+            f"of the player."
+        )
+
     # question_attempt
     outcome = "solved" if ep.correct else "failed"
     parts = [
