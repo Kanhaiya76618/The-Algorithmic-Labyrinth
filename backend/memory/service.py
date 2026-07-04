@@ -26,6 +26,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -38,8 +39,9 @@ logger = logging.getLogger("dor.memory")
 
 # Outage guard: a hung cognee call (e.g. an LLM retry storm) must degrade like
 # any other cognee failure, never stall the game loop.
-COGNEE_WRITE_TIMEOUT_S = 20.0   # remember / reinforce / improve / forget
-COGNEE_RECALL_TIMEOUT_S = 12.0  # recall / graph reads
+COGNEE_WRITE_TIMEOUT_S = 20.0   # remember / reinforce / forget
+COGNEE_RECALL_TIMEOUT_S = 25.0  # recall / graph reads (session-path answers add LLM turns)
+COGNEE_IMPROVE_TIMEOUT_S = 60.0  # improve bridges session feedback via cognify (LLM-heavy)
 
 _WHISPER_PREFIX = "whisper:"
 _REVEAL_PREFIX = "hidden entrance revealed"
@@ -52,7 +54,14 @@ _PROFILE_SYSTEM_PROMPT = (
     "weak_probes (list of failure probe labels like 'edge:empty'), "
     "frustration (number 0..1, recent failure pressure), "
     "explorer_score (number 0..1, breadth of exploration behaviour), "
-    "whispers_heard (integer), hidden_discovered (boolean)."
+    "whispers_heard (integer), hidden_discovered (boolean). "
+    "Topics MUST be the bare canonical topic name exactly as it appears in "
+    "the episodes — e.g. 'trees', 'sorting', 'graphs' — never a phrase; "
+    "never include difficulty levels or the word 'question'. "
+    "'Boss profile correction' statements are ground truth about outcomes: "
+    "when one contradicts episode-derived assessments, the correction wins "
+    "(e.g. a topic listed as weak must be dropped if a correction says the "
+    "player crushed it)."
 )
 
 _PROFILE_QUERY = (
@@ -83,6 +92,18 @@ class CogneeMemoryService(MemoryService):
         self._journal_dir.mkdir(parents=True, exist_ok=True)
         self._journal_lock = asyncio.Lock()
         self._last_qa: dict[str, str] = {}  # player_id -> qa_id of last recall
+        # player_id -> session of the last SUCCESSFUL recall. Sessions rotate
+        # per recall: cognee's session answer path feeds conversation history
+        # (our previous JSON answers) back into the prompt, and at temp 0 the
+        # model anchors on them — stale profiles the nonce can't defeat. A
+        # fresh session per recall keeps answers history-free while qa_id /
+        # feedback / improve stay bound to the session that recall used.
+        self._sessions: dict[str, str] = {}
+        # cognee 1.2.2 races on concurrent creation of a NEW dataset: writer B
+        # can see the Dataset row writer A just inserted before A's ACL grant
+        # lands (get_dataset_ids reads ownership, the permission check reads
+        # ACLs) -> spurious PermissionDeniedError. Serialize writes per player.
+        self._write_locks: dict[str, asyncio.Lock] = {}
         self._configure_cognee()
 
     def _configure_cognee(self) -> None:
@@ -99,9 +120,18 @@ class CogneeMemoryService(MemoryService):
     def _dataset(player_id: str) -> str:
         return f"player_{re.sub(r'[^a-zA-Z0-9_]', '_', player_id)}"
 
+    def _session(self, player_id: str) -> str:
+        """Session of the last successful recall (feedback/improve target)."""
+        sid = self._sessions.get(player_id)
+        if sid is None:
+            sid = self._new_session_id(player_id)
+            self._sessions[player_id] = sid
+        return sid
+
     @staticmethod
-    def _session(player_id: str) -> str:
-        return f"profile_{re.sub(r'[^a-zA-Z0-9_]', '_', player_id)}"
+    def _new_session_id(player_id: str) -> str:
+        safe = re.sub(r"[^a-zA-Z0-9_]", "_", player_id)
+        return f"profile_{safe}_{uuid.uuid4().hex[:8]}"
 
     def _journal_path(self, player_id: str) -> Path:
         return self._journal_dir / f"{self._dataset(player_id)}.jsonl"
@@ -139,18 +169,22 @@ class CogneeMemoryService(MemoryService):
 
     # ----------------------------------------------------------- interface
 
+    def _write_lock(self, player_id: str) -> asyncio.Lock:
+        return self._write_locks.setdefault(player_id, asyncio.Lock())
+
     async def remember_episode(self, episode: Episode) -> None:
         await self._journal_append(episode)  # exact log first — never lose it
         try:
             import cognee
 
-            await asyncio.wait_for(
-                cognee.remember(
-                    episode_to_text(episode),
-                    dataset_name=self._dataset(episode.player_id),
-                ),
-                timeout=COGNEE_WRITE_TIMEOUT_S,
-            )
+            async with self._write_lock(episode.player_id):
+                await asyncio.wait_for(
+                    cognee.remember(
+                        episode_to_text(episode),
+                        dataset_name=self._dataset(episode.player_id),
+                    ),
+                    timeout=COGNEE_WRITE_TIMEOUT_S,
+                )
         except asyncio.TimeoutError:
             logger.warning(
                 "remember() timed out after %.0fs; episode kept in journal only",
@@ -170,19 +204,32 @@ class CogneeMemoryService(MemoryService):
 
             # Nonce defeats session-cache staleness (see API_NOTES.md):
             nonce = f"{len(self._journal_read(player_id))}-{int(time.time())}"
+            # Fresh session per recall (history-free answers); committed to
+            # self._sessions only on success so reinforce/improve always
+            # target the last recall that actually produced a QA.
+            sid = self._new_session_id(player_id)
             results = await asyncio.wait_for(
                 cognee.recall(
                     _PROFILE_QUERY.format(player=player_id, nonce=nonce),
                     query_type=SearchType.GRAPH_COMPLETION,
                     datasets=[self._dataset(player_id)],
-                    session_id=self._session(player_id),
+                    session_id=sid,
                     top_k=15,
                     feedback_influence=0.5,
                     system_prompt=_PROFILE_SYSTEM_PROMPT,
                 ),
                 timeout=COGNEE_RECALL_TIMEOUT_S,
             )
+            self._sessions[player_id] = sid
             answer, qa_id = self._extract_answer(results)
+            if not qa_id:
+                # cognee 1.2.2: an explicit query_type forces recall's source
+                # list to ["graph"], so the session/QA source is never merged
+                # into results and no entry carries qa_id. The QA row for THIS
+                # recall was still written (the graph completion runs through
+                # the session path and add_qa is awaited before recall
+                # returns) — read it back directly.
+                qa_id = await self._latest_qa_id(player_id)
             if qa_id:
                 self._last_qa[player_id] = qa_id
                 profile.interaction_id = qa_id
@@ -230,6 +277,31 @@ class CogneeMemoryService(MemoryService):
         distinct = {(e.detail or "", e.floor) for e in eps if e.event_type == "exploration"}
         profile.explorer_score = min(1.0, len(distinct) / 8)
 
+    async def _latest_qa_id(self, player_id: str) -> Optional[str]:
+        """qa_id of the newest session-cache entry — i.e. the QA that the
+        recall which just returned wrote for its own answer."""
+        try:
+            from cognee.infrastructure.session.get_session_manager import (
+                get_session_manager,
+            )
+            from cognee.modules.users.methods import get_default_user
+
+            sm = get_session_manager()
+            if not sm.is_available:
+                return None
+            user = await get_default_user()
+            entries = await sm.get_session(
+                user_id=str(user.id),
+                session_id=self._session(player_id),
+                last_n=1,
+                formatted=False,
+            )
+            if entries:
+                return getattr(entries[-1], "qa_id", None)
+        except Exception:
+            logger.debug("latest_qa_id lookup failed", exc_info=True)
+        return None
+
     @staticmethod
     def _extract_answer(results) -> tuple[str, Optional[str]]:
         answer, qa_id = "", None
@@ -268,20 +340,35 @@ class CogneeMemoryService(MemoryService):
         return list(reversed(eps[-limit:]))  # newest first
 
     async def reinforce(self, player_id: str, outcome_text: str, score: float) -> None:
+        text = f"outcome score {score:+g}: {outcome_text}"
+        # Channel 1 — feedback EPISODE into the player's graph. This is the
+        # load-bearing path: graph content changes, so the next recall's
+        # context (and answer) changes even on tiny graphs. Never depends on
+        # a qa_id being present.
+        await self.remember_episode(
+            Episode(player_id=player_id, event_type="feedback", detail=text)
+        )
+        # Channel 2 — session-scoped QA feedback (opportunistic). Re-weights
+        # the graph elements the last profile answer used, once improve()
+        # bridges it. Only possible if the last recall yielded a qa_id.
         qa_id = self._last_qa.get(player_id)
         if not qa_id:
-            logger.info("reinforce skipped: no recall to target for %s", player_id)
+            logger.info(
+                "reinforce: no qa_id for %s — episode channel only", player_id
+            )
             return
         try:
             import cognee
-
-            text = f"outcome score {score:+g}: {outcome_text}"
+            # cognee 1.2.2 validates feedback_score as a 1..5 rating (not a
+            # signed delta): map our [-5..+5] onto it. -5 -> 1 (worst),
+            # 0 -> 3, +5 -> 5. The signed semantics stay in feedback_text.
+            rating = int(round((_clamp(score, -5, 5) + 5) / 10 * 4 + 1))
             await asyncio.wait_for(
                 cognee.session.add_feedback(
                     session_id=self._session(player_id),
                     qa_id=qa_id,
                     feedback_text=text,
-                    feedback_score=int(round(_clamp(score, -5, 5))),
+                    feedback_score=rating,
                 ),
                 timeout=COGNEE_WRITE_TIMEOUT_S,
             )
@@ -296,12 +383,21 @@ class CogneeMemoryService(MemoryService):
         try:
             import cognee
 
+            # session_ids is what makes feedback bite: without it improve()
+            # only enriches the graph and NEVER runs the feedback-weights
+            # pipeline (reinforce()'s scores would sit unused in the session
+            # cache). With it, QA feedback re-weights the graph elements the
+            # answer actually used, so future recalls rank them differently.
             await asyncio.wait_for(
-                cognee.improve(self._dataset(player_id)), timeout=COGNEE_WRITE_TIMEOUT_S
+                cognee.improve(
+                    self._dataset(player_id),
+                    session_ids=[self._session(player_id)],
+                ),
+                timeout=COGNEE_IMPROVE_TIMEOUT_S,
             )
         except asyncio.TimeoutError:
             logger.warning(
-                "improve timed out after %.0fs (non-fatal)", COGNEE_WRITE_TIMEOUT_S
+                "improve timed out after %.0fs (non-fatal)", COGNEE_IMPROVE_TIMEOUT_S
             )
         except Exception:
             logger.warning("improve failed (non-fatal)", exc_info=True)
@@ -323,6 +419,23 @@ class CogneeMemoryService(MemoryService):
             )
         except Exception:
             logger.warning("cognee.forget failed; journal still wiped", exc_info=True)
+        try:
+            # Session cache lives outside the dataset — wipe it too, or a
+            # "forgotten" player's stale QA entries (and qa_ids) would leak
+            # back in via _latest_qa_id on their next recall.
+            from cognee.infrastructure.session.get_session_manager import (
+                get_session_manager,
+            )
+            from cognee.modules.users.methods import get_default_user
+
+            sm = get_session_manager()
+            if sm.is_available:
+                user = await get_default_user()
+                await sm.delete_session(
+                    user_id=str(user.id), session_id=self._session(player_id)
+                )
+        except Exception:
+            logger.warning("session wipe failed during forget (non-fatal)", exc_info=True)
         self._journal_path(player_id).unlink(missing_ok=True)
         self._last_qa.pop(player_id, None)
 
