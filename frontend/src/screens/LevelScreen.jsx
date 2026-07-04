@@ -11,7 +11,6 @@ import { useGame } from "../hooks/useGameState";
 export default function LevelScreen() {
   const navigate = useNavigate();
   const { num } = useParams();
-  const level = LEVELS[(parseInt(num) || 1) - 1] || LEVELS[0];
 
   const {
     challenge,
@@ -19,6 +18,18 @@ export default function LevelScreen() {
     submitAnswerSession,
     fetchNextChallenge,
   } = useGame();
+
+  // The backend run is LINEAR: `run.level` is the single source of truth and
+  // only advances on a correct answer. The URL `/level/:num` never reaches the
+  // question fetch, so treating `num` as the level shows the wrong floor's
+  // trial number + badge while serving `run.level`'s question — the "Lv 1
+  // stuck / questions repeat" bug. Derive the floor from game state instead:
+  //   • a past floor (num < runLevel) is a cleared-floor review,
+  //   • otherwise you play your actual current floor (runLevel);
+  //   • you can never be ahead of runLevel.
+  const requestedNum = parseInt(num) || 1;
+  const floor = requestedNum < runLevel ? requestedNum : runLevel;
+  const level = LEVELS[floor - 1] || LEVELS[0];
 
   const [hp, setHp] = useState(4);
   const [activeMonster, setActive] = useState(null);
@@ -35,12 +46,40 @@ export default function LevelScreen() {
 
   // Make sure we have the active challenge loaded when entering a floor
   useEffect(() => {
-    if (parseInt(num) < runLevel) {
-      setDefeated(["m1", "m2", "m3"]);
+    // Can't skip ahead of your real progress — normalize the URL to your
+    // current floor so the trial number and the served question can't diverge.
+    if (requestedNum > runLevel) {
+      navigate(`/level/${runLevel}`, { replace: true });
+      return;
+    }
+    if (requestedNum < runLevel) {
+      setDefeated(["m1", "m2", "m3"]); // a cleared floor — review only
     } else {
+      setDefeated([]); // current floor is live again
       fetchNextChallenge();
     }
-  }, [num, runLevel]);
+  }, [requestedNum, runLevel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A click must never be a silent no-op: the popup gates on
+  // `activeMonster && challenge`, and `challenge` is null whenever there is
+  // no run or the persisted run_id went stale (backend keeps runs in memory;
+  // --reload wipes them). Fetch on demand and give visible feedback.
+  const handleMonsterClick = async (m) => {
+    if (challenge) {
+      setActive(m);
+      return;
+    }
+    const resp = await fetchNextChallenge();
+    if (resp?.challenge) {
+      setActive(m);
+    } else {
+      setFloatText({ type: "bad", text: "NO ACTIVE EXPEDITION" });
+      setTimeout(() => {
+        setFloatText(null);
+        navigate("/");
+      }, 1400);
+    }
+  };
 
   const handleAnswer = async (payload) => {
     try {
@@ -108,7 +147,7 @@ export default function LevelScreen() {
             </span>
           </div>
         </div>
-        <HUD hp={hp} xp={xp} level={runLevel} coins={128} />
+        <HUD hp={hp} xp={xp} level={floor} coins={128} />
       </div>
 
       {/* Playfield with monsters */}
@@ -129,7 +168,7 @@ export default function LevelScreen() {
             return (
               <motion.button
                 key={m.id}
-                onClick={() => !dead && setActive(m)}
+                onClick={() => !dead && handleMonsterClick(m)}
                 disabled={dead}
                 data-testid={`monster-${m.id}`}
                 whileHover={{ scale: dead ? 1 : 1.08 }}

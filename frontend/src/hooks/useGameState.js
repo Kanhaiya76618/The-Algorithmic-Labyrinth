@@ -125,6 +125,31 @@ export function GameProvider({ children }) {
       return resp;
     } catch (err) {
       console.warn("Failed to fetch next challenge", err);
+      // Backend keeps runs in memory (uvicorn --reload wipes them): a
+      // persisted run_id can go stale and 404 forever. Runs are ephemeral
+      // but the Boss's memory is keyed by player name — so mint a fresh run
+      // for the known player instead of silently doing nothing.
+      if (String(err.message).includes(" 404 ")) {
+        if (playerName) {
+          try {
+            const started = await client.startGame(playerName);
+            window.localStorage.setItem(client.RUN_ID_KEY, started.run_id);
+            setRunId(started.run_id);
+            setRunLevel(started.level);
+            setInHidden(false);
+            setHiddenLevel(1);
+            setDiscovery(started.discovery);
+            const resp = await client.nextChallenge(started.run_id);
+            setChallenge(resp.challenge);
+            return resp;
+          } catch (restartErr) {
+            console.warn("Failed to restart run after stale run_id", restartErr);
+          }
+        }
+        window.localStorage.removeItem(client.RUN_ID_KEY);
+        setRunId("");
+        setChallenge(null);
+      }
       return null;
     }
   };

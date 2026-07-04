@@ -25,7 +25,10 @@ export const IMG = {
 
   npc1_a: `${B}/npc1_a.png`,
   npc1_b: `${B}/npc1_b.png`,
-  npc2_a: `${B}/npc2_a.png`,
+  // merchant_a is an original in-style SVG placeholder (see merchant_a.svg):
+  // the four NPC PNG slots ship as one duplicated explorer image, so the
+  // Merchant had no distinct art. Flagged for a real raster art pass.
+  npc2_a: `${B}/merchant_a.svg`,
   npc2_b: `${B}/npc2_b.png`,
 
   prop_chest: `${B}/prop_chest.png`,
