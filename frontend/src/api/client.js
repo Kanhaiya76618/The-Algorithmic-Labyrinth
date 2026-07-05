@@ -64,3 +64,9 @@ export function getMemoryReport(playerId) {
 export function forget(playerId) {
   return post(`/memory/forget/${encodeURIComponent(playerId)}`, {});
 }
+
+// -> [{ player_id, max_level, explorer_score, threat_level, correct_attempts, total_attempts, last_updated }]
+export function getLeaderboard() {
+  return request("/game/leaderboard");
+}
+
