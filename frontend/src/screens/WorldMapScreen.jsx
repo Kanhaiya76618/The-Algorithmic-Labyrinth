@@ -6,7 +6,7 @@ import { LevelNode, ZoneBanner } from "../components/LevelNode";
 import { EmberParticles, CyanMist, LightShaft, MotionScreen } from "../components/Atmosphere";
 import { HUD } from "../components/HUD";
 import { EchoesJournal, EchoesTrigger } from "../components/EchoesJournal";
-import { Settings, MapPin, Eye } from "lucide-react";
+import { Settings, MapPin, Eye, LogOut } from "lucide-react";
 import { useGame } from "../hooks/useGameState";
 
 export default function WorldMapScreen({ onOpenSettings }) {
@@ -27,6 +27,7 @@ export default function WorldMapScreen({ onOpenSettings }) {
     enterHiddenSession,
     exploreSession,
     refreshReport,
+    exitSession,
   } = useGame();
 
   // Node vertical spacing (px) — total scroll length
@@ -167,11 +168,21 @@ export default function WorldMapScreen({ onOpenSettings }) {
           >
             <Settings className="w-5 h-5 text-cyan-mist" />
           </button>
-          <div className="glass-panel flex-1 px-3 py-1.5 flex items-center gap-2 min-w-0">
-            <MapPin className="w-4 h-4 text-cyan-mist shrink-0" />
-            <span className="font-display text-sm font-bold tracking-widest text-bone truncate">
-              {playerName.toUpperCase()}
-            </span>
+          <div className="glass-panel flex-1 px-3 py-1.5 flex items-center justify-between min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <MapPin className="w-4 h-4 text-cyan-mist shrink-0" />
+              <span className="font-display text-sm font-bold tracking-widest text-bone truncate">
+                {playerName.toUpperCase()}
+              </span>
+            </div>
+            <button
+              onClick={exitSession}
+              className="ml-1 text-stone-pale hover:text-ember-orange transition-colors shrink-0"
+              title="Exit Run (Return to Login)"
+              data-testid="btn-logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
           <EchoesTrigger onClick={() => setEchoesOpen(true)} />
         </div>

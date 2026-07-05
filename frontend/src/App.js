@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { Map, Swords, Skull, LayoutGrid, Grid3x3, Settings as SettingsIcon, X, Volume2 } from "lucide-react";
+import { Map, Swords, Skull, LayoutGrid, Grid3x3, Settings as SettingsIcon, X, Volume2, Trophy, LogOut } from "lucide-react";
 import "@/App.css";
 
 import WorldMapScreen from "@/screens/WorldMapScreen";
@@ -14,8 +14,9 @@ import VictoryScreen from "@/screens/VictoryScreen";
 import DefeatScreen from "@/screens/DefeatScreen";
 import ComponentLibraryScreen from "@/screens/ComponentLibraryScreen";
 import SpriteSheetScreen from "@/screens/SpriteSheetScreen";
+import LeaderboardScreen from "@/screens/LeaderboardScreen";
 import { IMG } from "@/data/game";
-import { GameProvider } from "@/hooks/useGameState";
+import { GameProvider, useGame } from "@/hooks/useGameState";
 
 // Desktop side scenery
 const SideScenery = ({ side }) => {
@@ -59,32 +60,52 @@ const SideScenery = ({ side }) => {
 // Top nav bar rendered on desktop above the device frame
 const DesktopNav = () => {
   const loc = useLocation();
+  const { runLevel, playerName, exitSession } = useGame();
+  
+  const currentLvl = runLevel || 1;
   const items = [
     { to: "/", label: "World Map", icon: Map, testid: "nav-map" },
-    { to: "/level/7", label: "Level", icon: Swords, testid: "nav-level" },
-    { to: "/boss/10", label: "Boss", icon: Skull, testid: "nav-boss" },
+    { to: `/level/${currentLvl}`, label: "Level", icon: Swords, testid: "nav-level" },
+    { to: "/leaderboard", label: "Leaderboard", icon: Trophy, testid: "nav-leaderboard" },
     { to: "/library", label: "Components", icon: LayoutGrid, testid: "nav-library" },
     { to: "/spritesheet", label: "Sprites", icon: Grid3x3, testid: "nav-spritesheet" },
   ];
   return (
-    <div className="mb-3 flex gap-1.5 flex-wrap justify-center" data-testid="desktop-nav">
-      {items.map((it) => {
-        const Ic = it.icon;
-        const active = loc.pathname === it.to || (it.to === "/" && loc.pathname === "/");
-        return (
-          <Link
-            key={it.to}
-            to={it.to}
-            data-testid={it.testid}
-            className={`carved-stone px-3 py-1.5 flex items-center gap-1.5 transition-all ${active ? "!bg-cyan-mist/15 border-cyan-mist" : ""}`}
+    <div className="mb-3 flex flex-col items-center gap-1.5" data-testid="desktop-nav">
+      {/* Main nav links row */}
+      <div className="flex gap-1.5 flex-wrap justify-center">
+        {items.map((it) => {
+          const Ic = it.icon;
+          const active = loc.pathname === it.to || (it.to === "/" && loc.pathname === "/");
+          return (
+            <Link
+              key={it.to}
+              to={it.to}
+              data-testid={it.testid}
+              className={`carved-stone px-3 py-1.5 flex items-center gap-1.5 transition-all ${active ? "!bg-cyan-mist/15 border-cyan-mist" : ""}`}
+            >
+              <Ic className={`w-4 h-4 ${active ? "text-cyan-mist" : "text-stone-pale"}`} />
+              <span className={`font-heading text-[11px] font-bold tracking-widest ${active ? "text-cyan-mist" : "text-bone/80"}`}>
+                {it.label.toUpperCase()}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      {/* Exit Run row — only visible when a player session is active */}
+      {playerName && (
+        <div className="flex justify-center">
+          <button
+            onClick={exitSession}
+            className="carved-stone px-4 py-1 flex items-center gap-1.5 transition-all text-stone-pale hover:text-ember-orange hover:border-ember-orange"
           >
-            <Ic className={`w-4 h-4 ${active ? "text-cyan-mist" : "text-stone-pale"}`} />
-            <span className={`font-heading text-[11px] font-bold tracking-widest ${active ? "text-cyan-mist" : "text-bone/80"}`}>
-              {it.label.toUpperCase()}
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="font-heading text-[10px] font-bold tracking-widest uppercase">
+              Exit Run · {playerName.toUpperCase()}
             </span>
-          </Link>
-        );
-      })}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -184,6 +205,7 @@ function AppShell() {
               <Route path="/defeat" element={<DefeatScreen />} />
               <Route path="/library" element={<ComponentLibraryScreen />} />
               <Route path="/spritesheet" element={<SpriteSheetScreen />} />
+              <Route path="/leaderboard" element={<LeaderboardScreen />} />
             </Routes>
           </AnimatePresence>
         </div>

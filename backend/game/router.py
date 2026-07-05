@@ -13,6 +13,7 @@ from backend.game import engine, session
 from backend.game.deps import get_memory
 from contracts.memory_interface import MemoryService
 from contracts.schemas import AnswerResult, Challenge, DiscoveryState, SubmitAnswerRequest
+from backend.game.leaderboard import LeaderboardEntry, get_leaderboard, refresh_player_leaderboard
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -68,6 +69,7 @@ def _run_or_404(run_id: str) -> session.RunState:
 @router.post("/start", response_model=StartResponse)
 async def start(req: StartRequest, mem: MemoryService = Depends(get_memory)) -> StartResponse:
     run, discovery = await engine.start_run(req.player_name.strip(), mem)
+    await refresh_player_leaderboard(run.player_id, run.level, mem)
     return StartResponse(run_id=run.run_id, player_id=run.player_id, level=run.level, discovery=discovery)
 
 
@@ -94,6 +96,7 @@ async def answer(req: SubmitAnswerRequest, mem: MemoryService = Depends(get_memo
         run, req.question_id, req.answer, req.code, req.language, mem
     )
     new_whisper = discovery.whispers[-1] if len(discovery.whispers) > known_whispers else None
+    await refresh_player_leaderboard(run.player_id, run.level, mem)
     return AnswerResponse(
         result=result,
         level=run.level,
@@ -108,6 +111,7 @@ async def answer(req: SubmitAnswerRequest, mem: MemoryService = Depends(get_memo
 async def explore(req: ExploreRequest, mem: MemoryService = Depends(get_memory)) -> ExploreResponse:
     run = _run_or_404(req.run_id)
     recorded = await engine.record_exploration(run, req.action, req.target, mem)
+    await refresh_player_leaderboard(run.player_id, run.level, mem)
     return ExploreResponse(recorded=recorded)
 
 
@@ -118,3 +122,8 @@ async def hidden_enter(req: HiddenEnterRequest, mem: MemoryService = Depends(get
     if discovery is None:
         raise HTTPException(status_code=403, detail="The entrance is sealed. The dungeon does not remember you finding it.")
     return StartResponse(run_id=run.run_id, player_id=run.player_id, level=run.hidden_level, discovery=discovery)
+
+
+@router.get("/leaderboard", response_model=list[LeaderboardEntry])
+def get_leaderboard_route() -> list[LeaderboardEntry]:
+    return get_leaderboard()

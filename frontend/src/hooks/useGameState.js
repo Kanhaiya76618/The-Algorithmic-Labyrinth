@@ -219,6 +219,19 @@ export function GameProvider({ children }) {
     }
   };
 
+  const exitSession = () => {
+    window.localStorage.removeItem(client.PLAYER_NAME_KEY);
+    window.localStorage.removeItem(client.RUN_ID_KEY);
+    setPlayerName("");
+    setRunId("");
+    setRunLevel(1);
+    setInHidden(false);
+    setHiddenLevel(1);
+    setDiscovery({ revealed: false, via: null, whispers: [] });
+    setReport(null);
+    setChallenge(null);
+  };
+
   // Helper to map profile attributes to shards
   function mapProfileToShards(profile) {
     const sList = [];
@@ -374,6 +387,7 @@ export function GameProvider({ children }) {
         enterHiddenSession,
         forgetSession,
         getRecalledDialogue,
+        exitSession,
       }}
     >
       {children}
